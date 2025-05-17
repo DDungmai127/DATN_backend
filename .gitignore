@@ -1,0 +1,7 @@
+.env
+node_modules/
+/uploads/*
+note.txt
+uploads
+config
+seeders
