@@ -30,7 +30,7 @@ module.exports = (sequelize, DataTypes) => {
 
       // Quan hệ nhiều-nhiều với Store thông qua StoreProduct
       Product.belongsToMany(models.Store, {
-        through: models.StoreProduct,
+        through: models.Inventory,
         foreignKey: "productId",
         otherKey: "storeId",
         as: "stores",
