@@ -261,14 +261,6 @@ const addDetailCategoryProduct = async (req, res) => {
     // Lấy danh sách ID tồn tại
     const existingIds = existingDetailCategories.map((dc) => dc.DetailCategoryId);
 
-    // // Nếu không có chi tiết danh mục nào hợp lệ, chỉ cần xóa là xong
-    // if (existingIds.length === 0) {
-    //   return res.status(200).json({
-    //     success: true,
-    //     message: "Đã xóa tất cả các chi tiết danh mục của sản phẩm",
-    //   });
-    // }
-
     // Tạo mảng dữ liệu chỉ với các ID tồn tại
     const detailCategoryProducts = existingIds.map((DetailCategoryId) => ({
       ProductID: productId,
@@ -420,9 +412,6 @@ const createProduct = async (req, res) => {
   }
 };
 
-/**
- * Cập nhật thông tin sản phẩm
- */
 /**
  * Cập nhật thông tin sản phẩm
  */

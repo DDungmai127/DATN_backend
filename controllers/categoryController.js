@@ -364,10 +364,7 @@ const getDetailStructureByCategoryId = async (req, res) => {
 const createCategory = async (req, res) => {
   try {
     const { categoryName, description } = req.body;
-    console.log(req.body);
     const detailCategories = req.body.detailCategories ? JSON.parse(req.body.detailCategories) : [];
-    console.log(detailCategories);
-    // Kiểm tra thông tin bắt buộc
     if (!categoryName) {
       return res.status(400).json({
         success: false,
@@ -413,14 +410,7 @@ const createCategory = async (req, res) => {
     console.error("Error creating category:", error);
     // Xóa file ảnh nếu có lỗi xảy ra
     if (req.file) {
-      const filePath = path.join(
-        __dirname,
-        "..",
-
-        "uploads",
-        "categories",
-        req.file.filename
-      );
+      const filePath = path.join(__dirname, "..", "uploads", "categories", req.file.filename);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }

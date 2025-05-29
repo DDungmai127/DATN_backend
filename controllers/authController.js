@@ -269,51 +269,7 @@ const changePassword = async (req, res) => {
     });
   }
 };
-
-// Refresh token
-const refreshToken = async (req, res) => {
-  try {
-    // Nếu người dùng đã được xác thực (từ middleware authenticate)
-    const user = req.user;
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Không tìm thấy thông tin người dùng",
-      });
-    }
-
-    // Tạo token mới
-    const token = jwt.sign(
-      {
-        userId: user.userId,
-        phoneNumber: user.phoneNumber,
-        role: user.role,
-      },
-      process.env.JWT_SECRET || "datn",
-      { expiresIn: "7d" }
-    );
-
-    // Thiết lập cookie mới
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Làm mới token thành công",
-    });
-  } catch (error) {
-    console.error("Error refreshing token:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Đã xảy ra lỗi khi làm mới token",
-    });
-  }
-};
-
+// Refesh Token Function if needed
 module.exports = {
   register,
   login,
@@ -321,5 +277,4 @@ module.exports = {
   getCurrentUser,
   updateUser,
   changePassword,
-  refreshToken,
 };

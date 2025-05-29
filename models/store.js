@@ -11,7 +11,7 @@ module.exports = (sequelize, DataTypes) => {
         onUpdate: "CASCADE",
       });
       // một cửa hàng có nhiều bản ghi sản phẩm
-      Store.hasMany(models.StoreProduct, {
+      Store.hasMany(models.Inventory, {
         foreignKey: "storeId",
         as: "storeProducts",
         onDelete: "CASCADE",
@@ -51,11 +51,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       longitude: {
-        type: DataTypes.DECIMAL(10, 8),
+        type: DataTypes.DECIMAL(11, 8),
         allowNull: false,
       },
       latitude: {
-        type: DataTypes.DECIMAL(10, 8),
+        type: DataTypes.DECIMAL(11, 8),
         allowNull: false,
       },
       status: {

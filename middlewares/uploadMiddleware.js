@@ -2,9 +2,10 @@ const multer = require("multer");
 const path = require("path");
 const slugify = require("slugify");
 
-// Cấu hình Multer
+// Config multer - type : product/category
 const createStorage = (type) => {
   return multer.diskStorage({
+    // Folder to save images
     destination: (req, file, cb) => {
       if (type === "category") {
         cb(null, path.join(__dirname, "../uploads/categories"));
@@ -14,8 +15,8 @@ const createStorage = (type) => {
         cb(null, path.join(__dirname, "../uploads"));
       }
     },
+
     filename: (req, file, cb) => {
-      // Kiểm tra xem categoryName có được gửi lên không
       let name;
       if (type === "category") {
         name = req.body.categoryName;

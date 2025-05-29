@@ -2,9 +2,10 @@
 const { Model } = require("sequelize");
 
 module.exports = (sequelize, DataTypes) => {
-  class StoreProduct extends Model {
+  class Inventory extends Model {
     static associate(models) {
-      StoreProduct.belongsTo(models.Store, {
+      // Quan hệ với Store
+      Inventory.belongsTo(models.Store, {
         foreignKey: "storeId",
         as: "store",
         onDelete: "CASCADE",
@@ -12,7 +13,7 @@ module.exports = (sequelize, DataTypes) => {
       });
 
       // Quan hệ với Product
-      StoreProduct.belongsTo(models.Product, {
+      Inventory.belongsTo(models.Product, {
         foreignKey: "productId",
         as: "product",
         onDelete: "CASCADE",
@@ -20,17 +21,23 @@ module.exports = (sequelize, DataTypes) => {
       });
     }
   }
-  StoreProduct.init(
+
+  Inventory.init(
     {
+      inventoryId: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+      },
       storeId: {
         type: DataTypes.UUID,
         allowNull: false,
-        primaryKey: true, // Là một phần của khóa chính tổng hợp
+        primaryKey: true,
       },
       productId: {
         type: DataTypes.UUID,
         allowNull: false,
-        primaryKey: true, // Là một phần của khóa chính tổng hợp
+        primaryKey: true,
       },
       quantity: {
         type: DataTypes.INTEGER,
@@ -43,10 +50,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "StoreProduct",
-      tableName: "StoreProducts",
-      timestamps: true, // Tự động thêm createdAt và updatedAt
+      modelName: "Inventory",
+      tableName: "Inventory", // Đổi tên bảng ở đây
+      timestamps: true,
     }
   );
-  return StoreProduct;
+
+  return Inventory;
 };

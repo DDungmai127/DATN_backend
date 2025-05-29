@@ -1,11 +1,10 @@
-const { Order, OrderItem, Product, User, sequelize } = require("../models");
+const { Order, OrderItem, Product, User, Store, sequelize } = require("../models"); // Thêm Store vào models
 const { Op } = require("sequelize");
 
 /**
  * Tạo đơn hàng mới từ thông tin giỏ hàng
  */
 const createOrder = async (req, res) => {
-  // Bắt đầu transaction để đảm bảo tính nhất quán dữ liệu
   const transaction = await sequelize.transaction();
 
   try {
@@ -17,6 +16,7 @@ const createOrder = async (req, res) => {
       deliveryTime,
       paymentMethod,
       orderItems,
+      storeId, // Thêm storeId vào request
     } = req.body;
 
     // Lấy userId nếu người dùng đã đăng nhập
@@ -42,6 +42,25 @@ const createOrder = async (req, res) => {
         success: false,
         message: "Giỏ hàng trống, vui lòng thêm sản phẩm vào giỏ hàng",
       });
+    }
+
+    // Kiểm tra storeId (nếu không có, có thể chọn cửa hàng gần nhất)
+    let selectedStoreId = storeId;
+    if (!selectedStoreId) {
+      // Tìm cửa hàng gần nhất với địa chỉ giao hàng
+      // Đây chỉ là mã giả, bạn cần thực hiện API để tìm cửa hàng gần nhất
+      const nearestStore = await findNearestStore(address);
+      if (nearestStore) {
+        selectedStoreId = nearestStore.storeId;
+      }
+    }
+
+    // Nếu vẫn không có storeId, sử dụng cửa hàng mặc định (nếu có)
+    if (!selectedStoreId) {
+      const defaultStore = await Store.findOne({ where: { isDefault: true } });
+      if (defaultStore) {
+        selectedStoreId = defaultStore.storeId;
+      }
     }
 
     // Kiểm tra số lượng tồn kho của từng sản phẩm
@@ -97,10 +116,11 @@ const createOrder = async (req, res) => {
       });
     }
 
-    // Tạo đơn hàng mới
+    // Tạo đơn hàng mới với storeId
     const order = await Order.create(
       {
         userId,
+        storeId: selectedStoreId, // Thêm storeId vào đơn hàng
         customerName,
         phoneNumber,
         address,
@@ -512,118 +532,11 @@ const updateOrderStatus = async (req, res) => {
 };
 
 /**
- * Lấy thống kê đơn hàng
- */
-const getOrderStatistics = async (req, res) => {
-  try {
-    // Kiểm tra quyền admin
-    if (!req.user.isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: "Bạn không có quyền truy cập chức năng này",
-      });
-    }
-
-    // Lấy tham số ngày từ request (mặc định là 30 ngày gần đây)
-    const days = parseInt(req.query.days) || 30;
-
-    // Tính ngày bắt đầu thống kê
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    startDate.setHours(0, 0, 0, 0);
-
-    // Thống kê số đơn hàng theo trạng thái
-    const ordersByStatus = await Order.findAll({
-      attributes: ["status", [sequelize.fn("COUNT", sequelize.col("orderId")), "count"]],
-      group: ["status"],
-    });
-
-    // Thống kê doanh thu theo ngày
-    const salesByDay = await Order.findAll({
-      attributes: [
-        [sequelize.fn("DATE", sequelize.col("Order.createdAt")), "date"],
-        [sequelize.fn("COUNT", sequelize.col("Order.orderId")), "orderCount"],
-        [
-          sequelize.fn("SUM", sequelize.literal("OrderItems.price * OrderItems.orderQuantity")),
-          "totalSales",
-        ],
-      ],
-      include: [
-        {
-          model: OrderItem,
-          as: "orderItems",
-          attributes: [],
-        },
-      ],
-      where: {
-        createdAt: { [Op.gte]: startDate },
-        status: { [Op.ne]: "Đã hủy" },
-      },
-      group: [sequelize.fn("DATE", sequelize.col("Order.createdAt"))],
-      order: [[sequelize.fn("DATE", sequelize.col("Order.createdAt")), "ASC"]],
-      raw: true,
-    });
-
-    // Thống kê tổng doanh thu
-    const totalSales = await OrderItem.findOne({
-      attributes: [[sequelize.fn("SUM", sequelize.literal("price * orderQuantity")), "totalSales"]],
-      include: [
-        {
-          model: Order,
-          as: "order",
-          attributes: [],
-          where: {
-            status: { [Op.ne]: "Đã hủy" },
-          },
-        },
-      ],
-      raw: true,
-    });
-
-    // Số đơn hàng mới trong ngày hôm nay
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const newOrdersToday = await Order.count({
-      where: {
-        createdAt: { [Op.gte]: today },
-      },
-    });
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        ordersByStatus,
-        salesByDay,
-        totalSales: totalSales?.totalSales || 0,
-        newOrdersToday,
-      },
-    });
-  } catch (error) {
-    console.error("Error getting order statistics:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Đã xảy ra lỗi khi lấy thống kê đơn hàng",
-      error: error.message,
-    });
-  }
-};
-
-/**
  * Lấy đơn hàng theo số điện thoại (cho khách hàng chưa đăng nhập)
  */
 const getOrdersByPhoneNumber = async (req, res) => {
   try {
     const { phoneNumber } = req.params;
-
-    // Validate số điện thoại
-    if (!phoneNumber) {
-      return res.status(400).json({
-        success: false,
-        message: "Vui lòng cung cấp số điện thoại",
-      });
-    }
-
     // Tìm các đơn hàng theo số điện thoại
     const orders = await Order.findAll({
       where: { phoneNumber },
@@ -692,15 +605,255 @@ const deleteOrder = async (req, res) => {
   }
 };
 
-// Export tất cả các functions
+const getRevenueStatistics = async (req, res) => {
+  try {
+    // Lấy tham số timeframe từ request
+    const { timeframe = "7days" } = req.query;
+
+    // Tính ngày bắt đầu dựa vào timeframe
+    const startDate = new Date();
+    let days = 7; // mặc định 7 ngày
+
+    switch (timeframe) {
+      case "30days":
+        days = 30;
+        break;
+      case "3months":
+        days = 90;
+        break;
+      case "6months":
+        days = 180;
+        break;
+      case "1year":
+        days = 365;
+        break;
+      default:
+        days = 7;
+    }
+
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Sửa lỗi "ambiguous column" bằng cách chỉ định rõ bảng cho createdAt
+    const revenueByDay = await Order.findAll({
+      attributes: [
+        // Chỉ định rõ cột createdAt từ bảng Orders
+        [sequelize.fn("DATE", sequelize.col("Order.createdAt")), "date"],
+        [
+          sequelize.fn("SUM", sequelize.literal("OrderItems.price * OrderItems.orderQuantity")),
+          "revenue",
+        ],
+      ],
+      include: [
+        {
+          model: OrderItem,
+          as: "orderItems",
+          attributes: [],
+          required: true, // Đảm bảo INNER JOIN
+        },
+      ],
+      where: {
+        createdAt: { [Op.gte]: startDate },
+        // Lọc các đơn hàng đã hủy
+        status: { [Op.notIn]: ["Đã hủy", "Cancelled"] },
+      },
+      group: [sequelize.fn("DATE", sequelize.col("Order.createdAt"))],
+      order: [[sequelize.fn("DATE", sequelize.col("Order.createdAt")), "ASC"]],
+      raw: true,
+    });
+
+    // Điền đầy đủ dữ liệu cho mỗi ngày trong khoảng thời gian
+    const result = [];
+    const endDate = new Date();
+    const currentDate = new Date(startDate);
+
+    // Tạo mảng chứa tất cả ngày trong khoảng
+    while (currentDate <= endDate) {
+      const dateStr = currentDate.toISOString().split("T")[0];
+
+      // Tìm doanh thu cho ngày hiện tại
+      const dayData = revenueByDay.find((item) => item.date === dateStr);
+
+      result.push({
+        date: dateStr,
+        revenue: dayData ? parseFloat(dayData.revenue || 0) : 0,
+      });
+
+      // Tăng lên ngày tiếp theo
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Lấy dữ liệu doanh thu thành công",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Error getting revenue statistics:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Đã xảy ra lỗi khi lấy thống kê doanh thu",
+      error: error.message,
+    });
+  }
+};
+/**
+ * Lấy danh sách đơn hàng theo cửa hàng
+ */
+const getOrdersByStore = async (req, res) => {
+  try {
+    const { storeId } = req.params;
+
+    // Validate storeId
+    if (!storeId) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng cung cấp mã cửa hàng",
+      });
+    }
+
+    // Kiểm tra cửa hàng tồn tại
+    const store = await Store.findByPk(storeId);
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy cửa hàng",
+      });
+    }
+
+    // Kiểm tra quyền truy cập (admin hoặc manager của cửa hàng)
+    const isAuthorized =
+      req.user.isAdmin || (req.user.role === "manager" && req.user.storeId === storeId);
+
+    if (!isAuthorized) {
+      return res.status(403).json({
+        success: false,
+        message: "Bạn không có quyền truy cập dữ liệu của cửa hàng này",
+      });
+    }
+
+    // Phân trang
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // Lọc theo trạng thái và thời gian
+    const whereCondition = { storeId };
+
+    if (req.query.status) {
+      whereCondition.status = req.query.status;
+    }
+
+    // Lọc theo ngày tạo
+    if (req.query.fromDate) {
+      if (!whereCondition.createdAt) whereCondition.createdAt = {};
+      whereCondition.createdAt[Op.gte] = new Date(req.query.fromDate);
+    }
+
+    if (req.query.toDate) {
+      if (!whereCondition.createdAt) whereCondition.createdAt = {};
+      const toDate = new Date(req.query.toDate);
+      toDate.setDate(toDate.getDate() + 1); // Để bao gồm cả ngày kết thúc
+      whereCondition.createdAt[Op.lt] = toDate;
+    }
+
+    // Tìm kiếm
+    if (req.query.search) {
+      whereCondition[Op.or] = [
+        { customerName: { [Op.like]: `%${req.query.search}%` } },
+        { phoneNumber: { [Op.like]: `%${req.query.search}%` } },
+      ];
+    }
+
+    // Sắp xếp
+    const sortField = req.query.sortBy || "createdAt";
+    const sortOrder = req.query.sortOrder || "DESC";
+    const orderOption = [[sortField, sortOrder]];
+
+    // Truy vấn dữ liệu
+    const { count, rows: orders } = await Order.findAndCountAll({
+      where: whereCondition,
+      include: [
+        {
+          model: OrderItem,
+          as: "orderItems",
+          include: [
+            {
+              model: Product,
+              as: "product",
+              attributes: ["productId", "productName", "price", "thumbnail"],
+            },
+          ],
+        },
+        {
+          model: User,
+          as: "user",
+          attributes: ["userId", "email", "fullName", "phoneNumber"],
+        },
+      ],
+      order: orderOption,
+      limit,
+      offset,
+      distinct: true,
+    });
+
+    // Tính tổng số trang
+    const totalPages = Math.ceil(count / limit);
+
+    // Tính tổng doanh thu của các đơn hàng được truy vấn
+    let totalRevenue = 0;
+    if (orders && orders.length > 0) {
+      for (const order of orders) {
+        // Bỏ qua các đơn hàng đã hủy
+        if (order.status !== "Đã hủy" && order.status !== "Cancelled") {
+          if (order.totalAmount) {
+            totalRevenue += order.totalAmount;
+          } else if (order.orderItems && order.orderItems.length > 0) {
+            // Tính tổng từ các orderItems nếu không có totalAmount
+            totalRevenue += order.orderItems.reduce(
+              (sum, item) => sum + item.price * item.orderQuantity,
+              0
+            );
+          }
+        }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: orders,
+      pagination: {
+        totalItems: count,
+        totalPages,
+        currentPage: page,
+        itemsPerPage: limit,
+      },
+      summary: {
+        totalOrders: count,
+        totalRevenue,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching orders by store:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Đã xảy ra lỗi khi lấy danh sách đơn hàng theo cửa hàng",
+      error: error.message,
+    });
+  }
+};
+
+// Đảm bảo thêm vào exports của module
 module.exports = {
+  // Các phương thức hiện có...
   createOrder,
   getUserOrders,
   getOrderDetail,
   cancelOrder,
   getAllOrders,
   updateOrderStatus,
-  getOrderStatistics,
   getOrdersByPhoneNumber,
   deleteOrder,
+  getOrdersByStore,
+  getRevenueStatistics, // Thêm phương thức mới
 };

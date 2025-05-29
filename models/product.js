@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
         onUpdate: "CASCADE",
       });
       // Quan hệ với StoreProduct
-      Product.hasMany(models.StoreProduct, {
+      Product.hasMany(models.Inventory, {
         foreignKey: "productId",
         as: "storeProducts",
         onDelete: "CASCADE",

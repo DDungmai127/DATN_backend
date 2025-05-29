@@ -45,11 +45,4 @@ router.put("/me", authenticate, authController.updateUser);
  */
 router.put("/change-password", authenticate, authController.changePassword);
 
-/**
- * @route POST /api/auth/refresh-token
- * @desc Làm mới token
- * @access Private
- */
-router.post("/refresh-token", authenticate, authController.refreshToken);
-
 module.exports = router;

@@ -13,6 +13,8 @@ const authRoutes = require("./routes/AuthRoutes");
 const userRoutes = require("./routes/userRoutes");
 const discountRoutes = require("./routes/discountRoutes");
 const orderRoutes = require("./routes/orderRoutes");
+const storeRoutes = require("./routes/storeRoutes");
+const inventoryRoutes = require("./routes/inventoryRoutes");
 // Khởi tạo ứng dụng
 const app = express();
 app.use(
@@ -44,6 +46,8 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/discounts", discountRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/stores", storeRoutes);
+app.use("/api/inventory", inventoryRoutes);
 // Thêm middleware để log request
 // app.use((req, res, next) => {
 //     console.log(`${req.method} ${req.url}`);
