@@ -3,6 +3,7 @@ const router = express.Router();
 const userController = require("../controllers/userController");
 const { authenticate, isAdmin } = require("../middlewares/authMiddleware");
 
+router.get("/profile/me", authenticate, userController.getCurrentUser);
 // Routes cho admin
 router.get("/", authenticate, isAdmin, userController.getUsers);
 router.get("/:userId", authenticate, userController.getUserById);

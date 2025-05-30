@@ -14,7 +14,8 @@ router.put("/:orderId/status", authenticate, isAdmin, orderController.updateOrde
 
 router.get("/store/:storeId", authenticate, orderController.getOrdersByStore);
 // Route yêu cầu đăng nhập - đặt sau các route cụ thể hơn
-router.get("/user", authenticate, orderController.getUserOrders); // Lấy đơn hàng của user
+router.get("/history", authenticate, orderController.getOrderHistory); // Lấy đơn hàng của user
+router.get("/current", authenticate, orderController.getCurrentOrders); // Lấy đơn hàng của user
 router.get("/:orderId", authenticate, orderController.getOrderDetail); // Xem chi tiết đơn hàng
 
 router.delete("/:orderId", authenticate, isAdmin, orderController.deleteOrder);

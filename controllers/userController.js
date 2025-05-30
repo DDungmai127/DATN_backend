@@ -343,6 +343,47 @@ const deleteUser = async (req, res) => {
   }
 };
 
+/**
+ * Lấy thông tin người dùng hiện tại từ token
+ */
+const getCurrentUser = async (req, res) => {
+  try {
+    // req.user đã được lấy từ token thông qua middleware authenticate
+    const user = req.user;
+
+    if (!user || !user.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Không tìm thấy thông tin người dùng",
+      });
+    }
+
+    // Tìm thông tin đầy đủ của người dùng từ database
+    const userDetails = await User.findByPk(user.userId, {
+      attributes: ["userId", "fullName", "email", "phoneNumber", "address", "gender"],
+    });
+
+    if (!userDetails) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông tin người dùng trong cơ sở dữ liệu",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: userDetails,
+    });
+  } catch (error) {
+    console.error("Error fetching current user:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Đã xảy ra lỗi khi lấy thông tin người dùng",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getUsers,
   getUserById,
@@ -350,4 +391,5 @@ module.exports = {
   deleteUser,
   updateProfile, // Thêm hàm mới
   getProfile, // Thêm hàm mới
+  getCurrentUser, // Thêm hàm mới
 };

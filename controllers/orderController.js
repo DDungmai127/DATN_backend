@@ -178,11 +178,162 @@ const createOrder = async (req, res) => {
 };
 
 /**
- * Lấy danh sách đơn hàng theo user đã đăng nhập
+ * Lấy đơn hàng hiện tại của người dùng đã đăng nhập (dựa trên userId hoặc số điện thoại)
  */
-const getUserOrders = async (req, res) => {
+const getCurrentOrders = async (req, res) => {
   try {
-    // Kiểm tra user ID từ token
+    // Lấy thông tin người dùng từ token
+    const user = req.user;
+    console.log("User info from token:", user);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Bạn cần đăng nhập để xem đơn hàng",
+      });
+    }
+
+    // Phân trang
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // Tạo điều kiện lọc: dựa vào userId hoặc số điện thoại
+    let whereCondition = {
+      status: {
+        [Op.in]: ["Chờ xử lý", "Đang giao hàng", "Đang xử lý"],
+      },
+    };
+
+    // Nếu có userId, ưu tiên tìm theo userId
+    if (user.userId) {
+      whereCondition.userId = user.userId;
+    }
+
+    // Nếu có phoneNumber, tìm thêm theo số điện thoại (hoặc chỉ tìm theo số điện thoại nếu không có userId)
+    if (user.phoneNumber) {
+      // Nếu đã có điều kiện userId, thêm điều kiện OR
+      if (whereCondition.userId) {
+        whereCondition = {
+          [Op.or]: [{ userId: user.userId }, { phoneNumber: user.phoneNumber }],
+          status: {
+            [Op.in]: ["Chờ xử lý", "Đang giao hàng", "Đang xử lý"],
+          },
+        };
+      } else {
+        // Nếu không có userId, chỉ tìm theo phoneNumber
+        whereCondition.phoneNumber = user.phoneNumber;
+      }
+    }
+
+    // Kiểm tra xem có đơn hàng nào khớp với điều kiện không trước
+    const orderCount = await Order.count({
+      where: whereCondition,
+    });
+
+    console.log(`Tìm thấy ${orderCount} đơn hàng đang xử lý`);
+
+    if (orderCount === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Không tìm thấy đơn hàng nào đang xử lý",
+        data: [],
+        pagination: {
+          totalItems: 0,
+          totalPages: 0,
+          currentPage: page,
+          itemsPerPage: limit,
+        },
+      });
+    }
+
+    // Nếu có đơn hàng, tiếp tục truy vấn đầy đủ
+    const { count, rows: orders } = await Order.findAndCountAll({
+      where: whereCondition,
+      include: [
+        {
+          model: OrderItem,
+          as: "orderItems",
+          attributes: [
+            "orderItemId",
+            "productId",
+            "productName",
+            "orderQuantity",
+            "price",
+            "amount",
+          ],
+          include: [
+            {
+              model: Product,
+              as: "product",
+              attributes: ["productName", "imageUrl"],
+              required: false,
+            },
+          ],
+        },
+        {
+          model: Store,
+          as: "store",
+          attributes: ["storeName", "storeAddress", "storePhoneNumber"],
+          required: false,
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+      limit,
+      offset,
+      distinct: true,
+    });
+
+    // Định dạng dữ liệu trả về
+    const formattedOrders = orders.map((order) => {
+      const orderJson = order.toJSON();
+
+      // Đảm bảo orderItems tồn tại
+      const orderItems = orderJson.orderItems || [];
+
+      // Tính tổng tiền an toàn
+      const totalAmount = orderItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+
+      // Xử lý orderId an toàn để tạo orderCode
+      const orderIdStr = String(order.orderId || "");
+      const orderCode = orderIdStr
+        ? `ORD-${orderIdStr.substring(0, 8).toUpperCase()}`
+        : "ORD-UNKNOWN";
+
+      return {
+        ...orderJson,
+        totalAmount,
+        orderCode,
+        orderDate: order.createdAt,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: formattedOrders,
+      pagination: {
+        totalItems: count,
+        totalPages: Math.ceil(count / limit),
+        currentPage: page,
+        itemsPerPage: limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error details:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Đã xảy ra lỗi khi lấy đơn hàng hiện tại",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Lấy lịch sử đơn hàng của người dùng đăng nhập (đã giao, đã hủy)
+ */
+const getOrderHistory = async (req, res) => {
+  try {
+    // Lấy userId từ token đăng nhập
     const userId = req.user.userId;
 
     // Phân trang
@@ -190,20 +341,45 @@ const getUserOrders = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
 
-    // Lọc theo trạng thái nếu có
-    const whereCondition = { userId };
-    if (req.query.status) {
+    // Lọc theo thời gian nếu có
+    const whereCondition = {
+      userId,
+      status: {
+        [Op.in]: ["Đã giao hàng", "Đã hủy"],
+      },
+    };
+    // Lọc theo trạng thái cụ thể nếu có
+    if (req.query.status && ["Đã giao hàng", "Đã hủy"].includes(req.query.status)) {
       whereCondition.status = req.query.status;
     }
 
-    // Lấy danh sách đơn hàng và tổng số đơn
+    // Truy vấn dữ liệu
     const { count, rows: orders } = await Order.findAndCountAll({
       where: whereCondition,
       include: [
         {
           model: OrderItem,
           as: "orderItems",
-          attributes: ["orderItemId", "productId", "orderQuantity", "price", "amount"],
+          attributes: [
+            "orderItemId",
+            "productId",
+            "productName",
+            "orderQuantity",
+            "price",
+            "amount",
+          ],
+          include: [
+            {
+              model: Product,
+              as: "product",
+              attributes: ["productName", "imageUrl"],
+            },
+          ],
+        },
+        {
+          model: Store,
+          as: "store",
+          attributes: ["storeName", "storeAddress", "storePhoneNumber"],
         },
       ],
       order: [["createdAt", "DESC"]],
@@ -214,22 +390,47 @@ const getUserOrders = async (req, res) => {
 
     // Tính tổng số trang
     const totalPages = Math.ceil(count / limit);
+    // Định dạng dữ liệu trả về
+    const formattedOrders = orders.map((order) => {
+      const orderJson = order.toJSON();
+      // Tính tổng tiền từ các orderItems
+      const totalAmount = orderJson.orderItems.reduce((sum, item) => sum + item.amount, 0);
+
+      return {
+        ...orderJson,
+        totalAmount,
+        // Thêm mã đơn hàng hiển thị ngắn gọn
+        orderCode: order.orderId,
+        // Format ngày đặt hàng để dễ đọc
+        orderDate: order.createdAt,
+      };
+    });
+
+    // Tính tổng đơn hàng thành công và đã hủy
+    const completedOrders = formattedOrders.filter(
+      (order) => order.status === "Đã giao hàng"
+    ).length;
+    const cancelledOrders = formattedOrders.filter((order) => order.status === "Đã hủy").length;
 
     return res.status(200).json({
       success: true,
-      data: orders,
+      data: formattedOrders,
       pagination: {
         totalItems: count,
         totalPages,
         currentPage: page,
         itemsPerPage: limit,
       },
+      summary: {
+        completedOrders,
+        cancelledOrders,
+      },
     });
   } catch (error) {
-    console.error("Error fetching user orders:", error);
+    console.error("Error fetching order history:", error);
     return res.status(500).json({
       success: false,
-      message: "Đã xảy ra lỗi khi lấy danh sách đơn hàng",
+      message: "Đã xảy ra lỗi khi lấy lịch sử đơn hàng",
       error: error.message,
     });
   }
@@ -250,6 +451,13 @@ const getOrderDetail = async (req, res) => {
           model: OrderItem,
           as: "orderItems",
           attributes: ["orderItemId", "productId", "orderQuantity", "price", "amount"],
+          include: [
+            {
+              model: Product,
+              as: "product",
+              attributes: ["productName"],
+            },
+          ],
         },
       ],
     });
@@ -781,7 +989,7 @@ const getOrdersByStore = async (req, res) => {
             {
               model: Product,
               as: "product",
-              attributes: ["productId", "productName", "price", "thumbnail"],
+              attributes: ["productId", "productName", "price", "imageUrl"],
             },
           ],
         },
@@ -847,7 +1055,6 @@ const getOrdersByStore = async (req, res) => {
 module.exports = {
   // Các phương thức hiện có...
   createOrder,
-  getUserOrders,
   getOrderDetail,
   cancelOrder,
   getAllOrders,
@@ -855,5 +1062,7 @@ module.exports = {
   getOrdersByPhoneNumber,
   deleteOrder,
   getOrdersByStore,
-  getRevenueStatistics, // Thêm phương thức mới
+  getRevenueStatistics,
+  getCurrentOrders,
+  getOrderHistory,
 };
