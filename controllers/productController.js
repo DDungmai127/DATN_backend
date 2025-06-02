@@ -585,8 +585,8 @@ const deleteProduct = async (req, res) => {
 const getProductsByCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
-
+    const { page = 1, limit = 10, sortOrder = "DESC", sortBy = "createdAt" } = req.query;
+    console.log(req.query);
     // Kiểm tra danh mục tồn tại
     const category = await Category.findByPk(categoryId);
     if (!category) {
@@ -603,11 +603,11 @@ const getProductsByCategory = async (req, res) => {
       const { rows: products, count: totalItems } = await Product.findAndCountAll({
         where: {
           categoryId,
-          status: "active", // Chỉ lấy sản phẩm đang hoạt động
+          status: "active", // Chỉ lấy sản phẩm đang oạt động
         },
         limit: parseInt(limit),
+        order: [[sortBy, sortOrder.toUpperCase()]],
         offset,
-        order: [["createdAt", "DESC"]],
         include: [
           {
             model: Category,

@@ -106,10 +106,11 @@ const login = async (req, res) => {
     );
 
     // Set cookie chứa token
+
     res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+      httpOnly: true, //Chỉ truy cập được từ phía server
+      secure: process.env.NODE_ENV === "production", // chống XSS
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 3 ngàys
     });
 
     // Không trả về mật khẩu trong response
@@ -250,7 +251,6 @@ const changePassword = async (req, res) => {
     // Mã hóa mật khẩu mới
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
-
     // Cập nhật mật khẩu
     await user.update({
       password: hashedPassword,

@@ -20,7 +20,7 @@ const createOrder = async (req, res) => {
     } = req.body;
 
     // Lấy userId nếu người dùng đã đăng nhập
-    const userId = req.user?.userId || null;
+    const userId = req.body?.userId || null;
 
     // Kiểm tra dữ liệu đầu vào
     if (
@@ -905,6 +905,192 @@ const getRevenueStatistics = async (req, res) => {
     });
   }
 };
+
+/**
+ * Lấy thống kê doanh thu theo từng cửa hàng
+ */
+const getRevenueByStore = async (req, res) => {
+  try {
+    // Lấy tham số timeframe từ request
+    const { timeframe = "7days", storeId } = req.query;
+
+    // Tính ngày bắt đầu dựa vào timeframe
+    const startDate = new Date();
+    let days = 7; // mặc định 7 ngày
+
+    switch (timeframe) {
+      case "30days":
+        days = 30;
+        break;
+      case "3months":
+        days = 90;
+        break;
+      case "6months":
+        days = 180;
+        break;
+      case "1year":
+        days = 365;
+        break;
+      default:
+        days = 7;
+    }
+
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Xây dựng điều kiện WHERE
+    const whereCondition = {
+      createdAt: { [Op.gte]: startDate },
+      // Chỉ tính doanh thu từ đơn hàng đã hoàn thành
+      status: "Đã giao hàng",
+    };
+
+    // Nếu có storeId cụ thể, thêm vào điều kiện
+    if (storeId && storeId !== "all") {
+      whereCondition.storeId = storeId;
+    }
+
+    // Lấy tất cả cửa hàng để trả về thông tin
+    const stores = await Store.findAll({
+      attributes: ["storeId", "storeName"],
+    });
+
+    // Nếu chỉ muốn doanh thu của một cửa hàng cụ thể
+    if (storeId && storeId !== "all") {
+      // Truy vấn doanh thu theo ngày của cửa hàng cụ thể
+      const revenueByDay = await Order.findAll({
+        attributes: [
+          [sequelize.fn("DATE", sequelize.col("Order.createdAt")), "date"],
+          [
+            sequelize.fn("SUM", sequelize.literal("OrderItems.price * OrderItems.orderQuantity")),
+            "revenue",
+          ],
+        ],
+        include: [
+          {
+            model: OrderItem,
+            as: "orderItems",
+            required: true,
+          },
+        ],
+        where: whereCondition,
+        group: [sequelize.fn("DATE", sequelize.col("Order.createdAt"))],
+        order: [[sequelize.fn("DATE", sequelize.col("Order.createdAt")), "ASC"]],
+        raw: true,
+      });
+
+      // Điền đầy đủ dữ liệu cho mỗi ngày trong khoảng thời gian
+      const result = [];
+      const endDate = new Date();
+      const currentDate = new Date(startDate);
+
+      while (currentDate <= endDate) {
+        const dateStr = currentDate.toISOString().split("T")[0];
+        const dayData = revenueByDay.find((item) => item.date === dateStr);
+
+        result.push({
+          date: dateStr,
+          revenue: dayData ? parseFloat(dayData.revenue || 0) : 0,
+        });
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Lấy dữ liệu doanh thu của cửa hàng thành công`,
+        data: result,
+        storeInfo: stores.find((store) => store.storeId == storeId),
+      });
+    } else {
+      // Nếu muốn doanh thu theo cửa hàng cho tất cả các cửa hàng
+      // Truy vấn doanh thu theo ngày và cửa hàng
+      const revenueByStoreAndDay = await Order.findAll({
+        attributes: [
+          [sequelize.fn("DATE", sequelize.col("Order.createdAt")), "date"],
+          ["storeId", "storeId"],
+          [
+            sequelize.fn("SUM", sequelize.literal("OrderItems.price * OrderItems.orderQuantity")),
+            "revenue",
+          ],
+        ],
+        include: [
+          {
+            model: OrderItem,
+            as: "orderItems",
+            attributes: [],
+            required: true,
+          },
+        ],
+        where: whereCondition,
+        group: [sequelize.fn("DATE", sequelize.col("Order.createdAt")), "Order.storeId"],
+        order: [
+          [sequelize.fn("DATE", sequelize.col("Order.createdAt")), "ASC"],
+          ["storeId", "ASC"],
+        ],
+        raw: true,
+      });
+
+      // Điền đầy đủ dữ liệu cho mỗi ngày và mỗi cửa hàng
+      const dateMap = {};
+      const endDate = new Date();
+      const currentDate = new Date(startDate);
+
+      // Tạo cấu trúc dữ liệu cho mỗi ngày
+      while (currentDate <= endDate) {
+        const dateStr = currentDate.toISOString().split("T")[0];
+
+        // Khởi tạo object với ngày và doanh thu tổng
+        dateMap[dateStr] = {
+          date: dateStr,
+          total: 0,
+        };
+
+        // Thêm doanh thu 0 cho mỗi cửa hàng
+        stores.forEach((store) => {
+          dateMap[dateStr][store.storeId] = 0;
+        });
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // Điền dữ liệu doanh thu thực tế vào cấu trúc
+      revenueByStoreAndDay.forEach((item) => {
+        const dateStr = item.date;
+        const storeId = item.storeId;
+        const revenue = parseFloat(item.revenue || 0);
+
+        if (dateMap[dateStr]) {
+          // Cập nhật doanh thu cho cửa hàng cụ thể
+          if (storeId && dateMap[dateStr][storeId] !== undefined) {
+            dateMap[dateStr][storeId] = revenue;
+          }
+
+          // Cộng vào tổng doanh thu của ngày
+          dateMap[dateStr].total += revenue;
+        }
+      });
+
+      // Chuyển đổi từ object sang mảng
+      const result = Object.values(dateMap);
+
+      return res.status(200).json({
+        success: true,
+        message: "Lấy dữ liệu doanh thu theo cửa hàng thành công",
+        data: result,
+        stores: stores,
+      });
+    }
+  } catch (error) {
+    console.error("Error getting revenue by store statistics:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Đã xảy ra lỗi khi lấy thống kê doanh thu theo cửa hàng",
+      error: error.message,
+    });
+  }
+};
+
 /**
  * Lấy danh sách đơn hàng theo cửa hàng
  */
@@ -1063,6 +1249,7 @@ module.exports = {
   deleteOrder,
   getOrdersByStore,
   getRevenueStatistics,
+  getRevenueByStore, // Thêm hàm mới
   getCurrentOrders,
   getOrderHistory,
 };
